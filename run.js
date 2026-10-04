@@ -27,11 +27,12 @@ const pc={};
 const prefsOf=async uid=>pc[uid]||(pc[uid]=(await db.doc(`users/${uid}/prefs/main`).get()).data()||{});
 async function reminders(){
   const snap=await db.collectionGroup('items').where('reminded','==',false).where('remindAt','<=',Date.now()).get();
+  console.log('Avisos pendientes:',snap.size);
   for(const d of snap.docs){
     const it=d.data(), uid=d.ref.parent.parent.id;
     if((await prefsOf(uid)).remindersOn===false){await d.ref.update({reminded:true});continue;}
     const html=`<h2>${esc(it.title)}</h2><p>${nice(it.date)}${it.time?' a las '+esc(it.time):''}</p>${it.notes?`<p>${esc(it.notes)}</p>`:''}<p style="color:#667">Aviso de Mi Agenda</p>`;
-    if(await send(uid,'Aviso: '+it.title,html).catch(()=>false)) await d.ref.update({reminded:true});
+    if(await send(uid,'Aviso: '+it.title,html).catch(e=>{console.error('ERROR enviando correo:',e.message);return false;})) await d.ref.update({reminded:true});
   }
 }
 
@@ -41,9 +42,11 @@ function section(title,list,subs){
 }
 async function reports(){
   const snap=await db.collectionGroup('prefs').get();
+  console.log('Usuarios con ajustes:',snap.size);
   for(const d of snap.docs){
     const P=d.data(); if(!P.reportOn) continue;
     const n=now(P.tz||'Europe/Madrid');
+    console.log('Informe',d.ref.parent.parent.id,'activado:',P.reportOn,'dia',n.dow,'/',P.reportDay,'hora',n.time,'/',P.reportTime,'ultimo:',P.lastReport);
     if(n.dow!==P.reportDay||n.time<(P.reportTime||'00:00')||P.lastReport===n.date) continue;
     const uid=d.ref.parent.parent.id, user=db.collection('users').doc(uid);
     const [is,ss]=await Promise.all([user.collection('items').get(),user.collection('subjects').get()]);
@@ -56,7 +59,7 @@ async function reports(){
     const done=items.filter(i=>todo(i)&&i.done&&i.date>=addDays(n.date,-7)&&i.date<=end);
     const html=`<h1>Tu semana en Mi Agenda</h1><p>Del ${nice(n.date)} al ${nice(end)}.</p>`+
       section('Esta semana',week,subs)+section('Pendiente atrasado',late,subs)+section('Pendiente esta semana',pend,subs)+section('Hecho',done,subs);
-    if(await send(uid,'Tu informe semanal de Mi Agenda',html).catch(()=>false)) await d.ref.update({lastReport:n.date});
+    if(await send(uid,'Tu informe semanal de Mi Agenda',html).catch(e=>{console.error('ERROR enviando correo:',e.message);return false;})) await d.ref.update({lastReport:n.date});
   }
 }
 
